@@ -1,0 +1,187 @@
+@model SettingsViewModel
+@{
+    ViewData["Title"] = "Configuration";
+}
+
+<div class="container mt-4">
+    <h2>Configuration</h2>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            @Model.ErrorMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(Model.SuccessMessage))
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            @Model.SuccessMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <!-- Subnet Configuration -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Subnet Configuration</h5>
+            <p class="text-muted">Configure the subnets used for evaluating domain status. At least one subnet is required.</p>
+
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>CIDR</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var subnet in Model.Subnets)
+                        {
+                            <tr>
+                                <td>@subnet</td>
+                                <td>
+                                    <form asp-action="RemoveSubnet" method="post" style="display: inline;">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="cidr" value="@subnet" />
+                                        <button type="submit" class="btn btn-danger btn-sm" 
+                                                @(Model.Subnets.Count <= 1 ? "disabled" : "")
+                                                onclick="return confirm('Are you sure you want to remove this subnet?');">
+                                            <i class="bi bi-trash"></i> Remove
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <form asp-action="AddSubnet" method="post" class="mt-4" id="addSubnetForm">
+                @Html.AntiForgeryToken()
+                <div class="row g-3 align-items-center">
+                    <div class="col-auto">
+                        <label for="NewSubnet" class="col-form-label">Add New Subnet:</label>
+                    </div>
+                    <div class="col-auto">
+                        <input type="text" id="NewSubnet" name="NewSubnet" class="form-control" 
+                               placeholder="192.168.1.0/24" value="@Model.NewSubnet"
+                               pattern="^([0-9]{1,3}\.){3}[0-9]{1,3}\/([0-9]|[1-2][0-9]|3[0-2])$"
+                               title="Enter a valid CIDR notation (e.g., 192.168.1.0/24)">
+                        <span asp-validation-for="NewSubnet" class="text-danger"></span>
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-plus-circle"></i> Add Subnet
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- CDN Provider Configuration -->
+    <div class="card">
+        <div class="card-body">
+            <h5 class="card-title">CDN Provider Configuration</h5>
+            <p class="text-muted">Configure the CDN providers used for domain status evaluation. At least one provider is required.</p>
+
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Provider Name</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var provider in Model.CdnProviders)
+                        {
+                            <tr>
+                                <td>@provider</td>
+                                <td>
+                                    <form asp-action="RemoveCdnProvider" method="post" style="display: inline;">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="name" value="@provider" />
+                                        <button type="submit" class="btn btn-danger btn-sm" 
+                                                @(Model.CdnProviders.Count <= 1 ? "disabled" : "")
+                                                onclick="return confirm('Are you sure you want to remove this CDN provider?');">
+                                            <i class="bi bi-trash"></i> Remove
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <form asp-action="AddCdnProvider" method="post" class="mt-4" id="addCdnProviderForm">
+                @Html.AntiForgeryToken()
+                <div class="row g-3 align-items-center">
+                    <div class="col-auto">
+                        <label for="NewCdnProvider" class="col-form-label">Add New CDN Provider:</label>
+                    </div>
+                    <div class="col-auto">
+                        <input type="text" id="NewCdnProvider" name="NewCdnProvider" class="form-control" 
+                               placeholder="Provider Name" value="@Model.NewCdnProvider">
+                        <span asp-validation-for="NewCdnProvider" class="text-danger"></span>
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-plus-circle"></i> Add Provider
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <a href="@Url.Action("Index")" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Home
+        </a>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            // Add custom validation for CIDR format
+            $.validator.addMethod('cidrFormat', function(value, element) {
+                return /^([0-9]{1,3}\.){3}[0-9]{1,3}\/([0-9]|[1-2][0-9]|3[0-2])$/.test(value);
+            }, 'Please enter a valid CIDR notation (e.g., 192.168.1.0/24)');
+
+            $('#addSubnetForm').validate({
+                rules: {
+                    NewSubnet: {
+                        required: true,
+                        cidrFormat: true
+                    }
+                },
+                messages: {
+                    NewSubnet: {
+                        required: 'Please enter a subnet',
+                        cidrFormat: 'Please enter a valid CIDR notation (e.g., 192.168.1.0/24)'
+                    }
+                }
+            });
+
+            $('#addCdnProviderForm').validate({
+                rules: {
+                    NewCdnProvider: {
+                        required: true,
+                        minlength: 2
+                    }
+                },
+                messages: {
+                    NewCdnProvider: {
+                        required: 'Please enter a provider name',
+                        minlength: 'Provider name must be at least 2 characters long'
+                    }
+                }
+            });
+        });
+    </script>
+}

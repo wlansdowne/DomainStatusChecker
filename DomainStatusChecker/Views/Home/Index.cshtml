@@ -1,0 +1,42 @@
+﻿@{
+    ViewData["Title"] = "Domain Status Checker";
+}
+
+<div class="text-center">
+    <h1 class="display-4 mb-4">Domain Status Checker</h1>
+    
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            @if (TempData["Error"] != null)
+            {
+                <div class="alert alert-danger" role="alert">
+                    @TempData["Error"]
+                </div>
+            }
+
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title mb-4">Upload Websites CSV</h5>
+                    <form asp-action="Upload" asp-controller="Home" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file" class="form-label">Select CSV File</label>
+                            <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload"></i> Upload and Process
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <h6>Expected CSV Format:</h6>
+                <pre class="text-start bg-light p-3 rounded">
+Name    Status    IP    Port    Host
+--------------------------------
+site1   STARTED   IP1   80     host1
+site2   STOPPED   IP2   443    host2</pre>
+            </div>
+        </div>
+    </div>
+</div>

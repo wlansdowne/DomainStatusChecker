@@ -1,0 +1,6 @@
+Site Name (Metabase Path)                     Status  IP              Port  Host
+==============================================================================
+example.com (W3SVC/1)                    STARTED 174.136.64.10  80    example.com
+test.com (W3SVC/2)                       STARTED 216.167.192.15 443   test.com
+cdn-site.com (W3SVC/3)                   STARTED 104.16.132.229 80    cdn-site.com
+stopped-site.com (W3SVC/4)               STOPPED 192.168.1.1    80    stopped-site.com

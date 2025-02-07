@@ -1,0 +1,138 @@
+@model List<Website>
+@{
+    ViewData["Title"] = "Website Status Report";
+}
+
+<style>
+    .status-group { margin-bottom: 30px; }
+    .status-header { 
+        background-color: #34495e; 
+        color: white; 
+        padding: 10px; 
+        border-radius: 5px;
+    }
+    .domain-status {
+        font-weight: bold;
+        padding: 3px 8px;
+        border-radius: 3px;
+    }
+    .status-alive { color: #27ae60; }
+    .status-cdn { color: #2980b9; }
+    .status-elsewhere { color: #f39c12; }
+    .status-error { color: #c0392b; }
+    .status-notfound { color: #7f8c8d; }
+    .priority-section {
+        border: 2px solid #27ae60;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 30px;
+        background-color: #f0fff0;
+    }
+    .summary { 
+        background-color: #ecf0f1; 
+        padding: 15px; 
+        border-radius: 5px; 
+        margin-bottom: 20px;
+    }
+</style>
+
+<div class="container-fluid">
+    <h1 class="mb-4">Website Status Report</h1>
+
+    <div class="summary">
+        <strong>Total Websites:</strong> @Model.Count<br/>
+        @foreach (var group in Model.GroupBy(w => w.Status))
+        {
+            <text>@group.Key: @group.Count() websites<br/></text>
+        }
+    </div>
+
+    @{
+        var aliveWebsites = Model.Where(w => w.DomainStatus == "Alive").ToList();
+        if (aliveWebsites.Any())
+        {
+            <div class="priority-section">
+                <h2 class="status-header">Priority: Websites in Target Subnets (Alive)</h2>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Website Name</th>
+                                <th>IP Address</th>
+                                <th>Port</th>
+                                <th>Host</th>
+                                <th>Domain Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var site in aliveWebsites)
+                            {
+                                <tr>
+                                    <td>@site.Name</td>
+                                    <td>@site.IP</td>
+                                    <td>@site.Port</td>
+                                    <td>@site.Host</td>
+                                    <td><span class="domain-status status-alive">@site.DomainStatus</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    }
+
+    @foreach (var group in Model.GroupBy(w => w.Status).OrderBy(g => g.Key == "STARTED" ? 0 : 1))
+    {
+        <div class="status-group">
+            <h2 class="status-header">Status: @group.Key</h2>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Website Name</th>
+                            <th>IP Address</th>
+                            <th>Port</th>
+                            <th>Host</th>
+                            <th>Domain Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var site in group)
+                        {
+                            <tr>
+                                <td>@site.Name</td>
+                                <td>@site.IP</td>
+                                <td>@site.Port</td>
+                                <td>@site.Host</td>
+                                <td>
+                                    @{
+                                        var statusClass = site.DomainStatus switch
+                                        {
+                                            "Alive" => "status-alive",
+                                            var s when s.StartsWith("CDN Protected") => "status-cdn",
+                                            "Resolves Elsewhere" => "status-elsewhere",
+                                            "DNS Error" => "status-error",
+                                            "Not Found" => "status-notfound",
+                                            _ => ""
+                                        };
+                                    }
+                                    <span class="domain-status @statusClass">@site.DomainStatus</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    <div class="mb-4">
+        <button class="btn btn-primary" onclick="window.print()">
+            <i class="bi bi-printer"></i> Print Report
+        </button>
+        <a href="@Url.Action("Index")" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Upload
+        </a>
+    </div>
+</div>

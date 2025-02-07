@@ -1,0 +1,179 @@
+Domain Status Checker - IIS Deployment Guide
+==========================================
+
+Prerequisites
+------------
+1. Windows Server 2019
+2. Internet Information Services (IIS)
+3. .NET 7.0 Runtime & Hosting Bundle (download from: https://dotnet.microsoft.com/download/dotnet/7.0)
+4. URL Rewrite Module for IIS (download from: https://www.iis.net/downloads/microsoft/url-rewrite)
+
+Installation Steps
+----------------
+
+1. Install Required Windows Features:
+   Open PowerShell as Administrator and run:
+   ```powershell
+   Install-WindowsFeature -Name Web-Server -IncludeManagementTools
+   Install-WindowsFeature -Name NET-Framework-45-ASPNET
+   Install-WindowsFeature -Name Web-Asp-Net45
+   ```
+
+2. Install .NET 7.0:
+   a. Download and install the .NET 7.0 SDK
+   b. Download and install the .NET 7.0 Hosting Bundle
+   c. Restart the server or run: iisreset
+
+3. Publish the Application:
+   On your development machine:
+   a. Open PowerShell in the project directory
+   b. Run:
+      ```powershell
+      cd DomainStatusChecker
+      dotnet publish --configuration Release --output "c:\temp\publish"
+      ```
+   c. Copy all files from the publish folder to your server
+
+4. Configure IIS:
+   a. Open IIS Manager
+   b. Create a new Application Pool:
+      - Name: DomainStatusCheckerPool
+      - .NET CLR version: No Managed Code
+      - Managed pipeline mode: Integrated
+      - Identity: ApplicationPoolIdentity
+
+   c. Create a new Website:
+      - Site name: DomainStatusChecker
+      - Application pool: DomainStatusCheckerPool
+      - Physical path: [Path to your published files]
+      - Binding: Choose appropriate hostname and port
+
+5. Configure Application Settings:
+   a. In IIS Manager, select the website
+   b. Double-click on "Configuration Editor"
+   c. Section: system.webServer/security/requestFiltering
+   d. Set maxAllowedContentLength to: 52428800 (50MB)
+   e. Set maxQueryString to: 2048
+
+6. Set File Permissions:
+   Give IIS_IUSRS and IUSR full access to:
+   - The website root folder
+   - The application's log folder (if used)
+   - The appsettings.json file (IMPORTANT: Required for subnet and CDN configuration)
+   
+   Run in PowerShell as Administrator:
+   ```powershell
+   $websitePath = "path\to\your\website"
+   $acl = Get-Acl "$websitePath\appsettings.json"
+   $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("IIS_IUSRS", "FullControl", "Allow")
+   $acl.SetAccessRule($rule)
+   Set-Acl "$websitePath\appsettings.json" $acl
+   ```
+
+7. Web.config Settings:
+   Create/update web.config in the site root:
+   ```xml
+   <?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <system.webServer>
+    <security>
+      <requestFiltering>
+        <requestLimits maxAllowedContentLength="52428800" />
+      </requestFiltering>
+    </security>
+    <handlers>
+      <add name="aspNetCore" path="*" verb="*" modules="AspNetCoreModuleV2" resourceType="Unspecified" />
+    </handlers>
+    <aspNetCore processPath="C:\Program Files\dotnet\dotnet.exe" 
+                arguments=".\DomainStatusChecker.dll" 
+                stdoutLogEnabled="true" 
+                stdoutLogFile="D:\Domain Status Checker\logs\stdout" 
+                hostingModel="inprocess">
+      <environmentVariables>
+        <environmentVariable name="ASPNETCORE_ENVIRONMENT" value="Production" />
+      </environmentVariables>
+    </aspNetCore>
+  </system.webServer>
+</configuration>
+   ```
+
+   Additionally, modify the IIS server's applicationHost.config (located at %windir%\System32\inetsrv\config\applicationHost.config):
+   ```xml
+   <system.webServer>
+       <aspNetCore maxRequestHeaderTotalSize="65536" />
+   </system.webServer>
+   ```
+
+8. Initial Configuration:
+   a. Access the application's Settings page at /Home/Settings
+   b. Configure your subnets and CDN providers
+   c. Test the configuration by uploading a CSV file
+
+9. Verify Installation:
+   a. Open a web browser
+   b. Navigate to your website URL
+   c. Try uploading a CSV file to test functionality
+   d. Verify subnet and CDN configuration options work
+
+Troubleshooting
+--------------
+1. Check Application Pool Settings:
+   - Enable 32-Bit Applications: False
+   - Identity: ApplicationPoolIdentity
+   - Idle Time-out: 0
+   - Load User Profile: True
+
+2. Check Event Viewer for errors:
+   - Windows Logs > Application
+   - Windows Logs > System
+
+3. Check stdout logs:
+   - Look in the logs directory specified in web.config
+
+4. Common Issues:
+   - 502.5 Error: Verify .NET 7.0 Hosting Bundle is installed
+   - 500.19 Error: Check file permissions and web.config syntax
+   - 431 Error: Verify request limits in web.config and IIS settings
+   - 400 Bad Request (Request Too Long): Check maxRequestHeaderTotalSize in both web.config and applicationHost.config
+   - Configuration changes not saving: Check file permissions on appsettings.json
+
+Security Considerations
+---------------------
+1. Enable HTTPS:
+   - Install SSL certificate
+   - Configure HTTPS binding
+   - Force HTTPS redirection
+
+2. Configure Firewall:
+   - Allow inbound traffic on port 80/443
+   - Block unnecessary ports
+
+3. File Permissions:
+   - Ensure appsettings.json has appropriate permissions
+   - Restrict access to configuration files
+   - Use least privilege principle for service accounts
+
+4. Regular Updates:
+   - Keep Windows Server updated
+   - Keep .NET runtime updated
+   - Keep IIS modules updated
+
+Performance Tuning
+----------------
+1. Application Pool:
+   - Set "Maximum Worker Processes" based on server capacity
+   - Enable "Rapid-Fail Protection"
+   - Set appropriate recycling intervals
+
+2. IIS:
+   - Enable dynamic compression
+   - Enable output caching
+   - Configure appropriate buffer limits
+
+3. .NET:
+   - Configure GC settings if needed
+   - Monitor memory usage
+   - Set appropriate thread pool limits
+
+For assistance, contact your system administrator or refer to Microsoft's documentation:
+https://docs.microsoft.com/en-us/aspnet/core/host-and-deploy/iis/
