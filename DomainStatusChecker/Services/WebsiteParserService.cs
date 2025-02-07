@@ -13,8 +13,8 @@ public class WebsiteParserService : IWebsiteParserService
     private readonly ILogger<WebsiteParserService> _logger;
     private readonly IDomainStatusService _domainStatusService;
     private static readonly SemaphoreSlim _processingLimiter = new SemaphoreSlim(20);
-    private const int BatchSize = 25; // Reduced batch size
-    private const int ChunkSize = 100; // Number of lines to read at once
+    private const int BatchSize = 25;
+    private const int ChunkSize = 100;
 
     public WebsiteParserService(
         ILogger<WebsiteParserService> logger,
@@ -38,11 +38,9 @@ public class WebsiteParserService : IWebsiteParserService
 
             while (!reader.EndOfStream)
             {
-                // Process CSV in chunks to avoid memory issues
                 currentChunk.Clear();
                 var chunkCount = 0;
 
-                // Read a chunk of lines
                 while (chunkCount < ChunkSize && (line = await reader.ReadLineAsync()) != null)
                 {
                     if (!string.IsNullOrWhiteSpace(line) && 
@@ -55,7 +53,6 @@ public class WebsiteParserService : IWebsiteParserService
                     chunkCount++;
                 }
 
-                // Process the current chunk in batches
                 for (int i = 0; i < currentChunk.Count; i += BatchSize)
                 {
                     var batch = currentChunk.Skip(i).Take(BatchSize);
@@ -70,7 +67,6 @@ public class WebsiteParserService : IWebsiteParserService
 
                     try
                     {
-                        // Process batch with timeout
                         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
                         await Task.WhenAll(batchTasks).WaitAsync(cts.Token);
                     }
@@ -80,7 +76,6 @@ public class WebsiteParserService : IWebsiteParserService
                         continue;
                     }
 
-                    // Add small delay between batches to prevent overwhelming
                     await Task.Delay(100);
                 }
             }
@@ -120,8 +115,16 @@ public class WebsiteParserService : IWebsiteParserService
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                     try
                     {
+                        // Get domain status
                         website.DomainStatus = await _domainStatusService.CheckDomainStatusAsync(website.Host)
                             .WaitAsync(TimeSpan.FromSeconds(30), cts.Token);
+
+                        // If domain is alive or CDN protected, get nameservers
+                        if (website.DomainStatus == "Alive" || website.DomainStatus.StartsWith("CDN Protected"))
+                        {
+                            website.Nameservers = await _domainStatusService.GetNameserversAsync(website.Host)
+                                .WaitAsync(TimeSpan.FromSeconds(10), cts.Token);
+                        }
                     }
                     catch (OperationCanceledException)
                     {

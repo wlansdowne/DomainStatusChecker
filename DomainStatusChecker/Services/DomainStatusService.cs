@@ -3,12 +3,14 @@ using System.Net.Sockets;
 using DomainStatusChecker.Models;
 using System.Text.Json;
 using System.Net.Http.Json;
+using DnsClient;
 
 namespace DomainStatusChecker.Services;
 
 public interface IDomainStatusService
 {
     Task<string> CheckDomainStatusAsync(string domain);
+    Task<List<string>> GetNameserversAsync(string domain);
     bool IsIpInSubnets(string ipAddress);
 }
 
@@ -19,6 +21,7 @@ public class DomainStatusService : IDomainStatusService
     private readonly IConfigurationService _configService;
     private readonly IConfiguration _configuration;
     private static readonly TimeSpan _dnsTimeout = TimeSpan.FromSeconds(5);
+    private readonly LookupClient _dnsClient;
 
     public DomainStatusService(
         ILogger<DomainStatusService> logger,
@@ -30,6 +33,16 @@ public class DomainStatusService : IDomainStatusService
         _httpClient = httpClientFactory.CreateClient();
         _configService = configService;
         _configuration = configuration;
+        
+        // Configure DNS client with timeout
+        var options = new LookupClientOptions
+        {
+            UseCache = true,
+            Timeout = _dnsTimeout,
+            UseTcpOnly = false,
+            UseRandomNameServer = true
+        };
+        _dnsClient = new LookupClient(options);
     }
 
     public async Task<string> CheckDomainStatusAsync(string domain)
@@ -76,25 +89,38 @@ public class DomainStatusService : IDomainStatusService
         }
     }
 
+    public async Task<List<string>> GetNameserversAsync(string domain)
+    {
+        try
+        {
+            var result = await _dnsClient.QueryAsync(domain, QueryType.NS);
+            var nameservers = result.Answers
+                .NsRecords()
+                .Select(record => record.NSDName.Value.TrimEnd('.'))
+                .OrderBy(ns => ns)
+                .ToList();
+
+            _logger.LogInformation("Found nameservers for {Domain}: {Nameservers}", 
+                domain, string.Join(", ", nameservers));
+
+            return nameservers;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting nameservers for {Domain}", domain);
+            return new List<string>();
+        }
+    }
+
     private async Task<List<string>> GetHostAddressesWithTimeoutAsync(string domain)
     {
         try
         {
-            using var cts = new CancellationTokenSource(_dnsTimeout);
-            var dnsTask = Task.Run(async () =>
-            {
-                var addresses = await Dns.GetHostAddressesAsync(domain);
-                return addresses.Where(ip => ip.AddressFamily == AddressFamily.InterNetwork)
-                              .Select(ip => ip.ToString())
-                              .ToList();
-            });
-
-            return await dnsTask.WaitAsync(cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogWarning("DNS lookup timeout for domain: {Domain}", domain);
-            return new List<string>();
+            var result = await _dnsClient.QueryAsync(domain, QueryType.A);
+            return result.Answers
+                .ARecords()
+                .Select(record => record.Address.ToString())
+                .ToList();
         }
         catch (Exception ex)
         {

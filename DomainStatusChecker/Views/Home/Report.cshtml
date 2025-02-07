@@ -34,6 +34,11 @@
         border-radius: 5px; 
         margin-bottom: 20px;
     }
+    .nameservers {
+        font-size: 0.9em;
+        color: #666;
+        margin-top: 5px;
+    }
 </style>
 
 <div class="container-fluid">
@@ -62,6 +67,7 @@
                                 <th>Port</th>
                                 <th>Host</th>
                                 <th>Domain Status</th>
+                                <th>Nameservers</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -73,6 +79,14 @@
                                     <td>@site.Port</td>
                                     <td>@site.Host</td>
                                     <td><span class="domain-status status-alive">@site.DomainStatus</span></td>
+                                    <td>
+                                        @if (site.Nameservers.Any())
+                                        {
+                                            <div class="nameservers">
+                                                @string.Join("<br/>", site.Nameservers)
+                                            </div>
+                                        }
+                                    </td>
                                 </tr>
                             }
                         </tbody>
@@ -95,6 +109,7 @@
                             <th>Port</th>
                             <th>Host</th>
                             <th>Domain Status</th>
+                            <th>Nameservers</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -110,7 +125,7 @@
                                         var statusClass = site.DomainStatus switch
                                         {
                                             "Alive" => "status-alive",
-                                            var s when s.StartsWith("CDN Protected") => "status-cdn",
+                                            var s when s?.StartsWith("CDN Protected") == true => "status-cdn",
                                             "Resolves Elsewhere" => "status-elsewhere",
                                             "DNS Error" => "status-error",
                                             "Not Found" => "status-notfound",
@@ -118,6 +133,14 @@
                                         };
                                     }
                                     <span class="domain-status @statusClass">@site.DomainStatus</span>
+                                </td>
+                                <td>
+                                    @if (site.Nameservers.Any())
+                                    {
+                                        <div class="nameservers">
+                                            @Html.Raw(string.Join("<br/>", site.Nameservers))
+                                        </div>
+                                    }
                                 </td>
                             </tr>
                         }

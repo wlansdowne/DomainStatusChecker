@@ -8,6 +8,7 @@ public class Website
     public int? Port { get; set; }
     public string? Host { get; set; }
     public string? DomainStatus { get; set; }
+    public List<string> Nameservers { get; set; } = new();
 }
 
 public class WebsiteConfiguration
