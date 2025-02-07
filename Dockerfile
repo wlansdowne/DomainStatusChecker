@@ -19,12 +19,19 @@ RUN apt-get update && \
     apt-get install -y nginx curl tzdata && \
     rm -rf /var/lib/apt/lists/* && \
     # Create necessary directories with proper permissions
-    mkdir -p /var/log/nginx /var/lib/nginx/body /var/lib/nginx/fastcgi /var/lib/nginx/proxy /var/lib/nginx/scgi /var/lib/nginx/uwsgi /run/nginx && \
+    mkdir -p /app/nginx/logs /app/nginx/temp/body /app/nginx/temp/proxy /app/nginx/temp/fastcgi /app/nginx/temp/uwsgi /app/nginx/temp/scgi /app/nginx/run && \
     # Create directory for ASP.NET Core data protection keys
     mkdir -p /app/.aspnet/DataProtection-Keys && \
     # Set permissions
-    chown -R www-data:www-data /var/log/nginx /var/lib/nginx /run/nginx /app/.aspnet && \
-    chmod 755 /var/log/nginx /var/lib/nginx /run/nginx /app/.aspnet
+    chown -R www-data:www-data /app/nginx && \
+    chmod 755 /app/nginx && \
+    chmod 777 /app/nginx/logs && \
+    # Remove default NGINX files we don't need
+    rm -rf /var/log/nginx /var/lib/nginx /var/www/html && \
+    # Create symlinks for NGINX to use our directories
+    ln -s /app/nginx/logs /var/log/nginx && \
+    ln -s /app/nginx/temp /var/lib/nginx && \
+    ln -s /app/nginx/run /run/nginx
 
 # Copy NGINX configuration
 COPY docker/nginx.conf /etc/nginx/nginx.conf
@@ -42,7 +49,10 @@ ENV ASPNETCORE_URLS=http://+:5000 \
 RUN useradd -r -s /bin/false appuser && \
     # Set permissions for application
     chown -R appuser:appuser /app && \
-    # Ensure NGINX can still access static files
+    # Ensure NGINX can still access its directories
+    chown -R appuser:www-data /app/nginx && \
+    chmod -R 775 /app/nginx && \
+    # Ensure static files are accessible
     chmod -R 755 /app/wwwroot
 
 # Copy and set up start script
