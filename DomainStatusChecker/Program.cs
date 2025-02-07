@@ -10,7 +10,7 @@ builder.Services.AddScoped<IDomainStatusService, DomainStatusService>();
 builder.Services.AddScoped<IWebsiteParserService, WebsiteParserService>();
 builder.Services.AddScoped<IConfigurationService, ConfigurationService>();
 
-// Configure Kestrel
+// Configure Kestrel with timeouts
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     // Set the maximum request body size to 50MB
@@ -28,16 +28,6 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     });
 });
 
-// Configure request timeouts middleware
-builder.Services.AddRequestTimeouts(options =>
-{
-    options.DefaultPolicy = new Microsoft.AspNetCore.Http.Timeouts.RequestTimeoutPolicy
-    {
-        Timeout = TimeSpan.FromMinutes(5),
-        TimeoutStatusCode = StatusCodes.Status504GatewayTimeout
-    };
-});
-
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -46,9 +36,6 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
-
-// Use request timeouts middleware
-app.UseRequestTimeouts();
 
 // Configure static files with explicit paths
 app.UseStaticFiles(new StaticFileOptions
