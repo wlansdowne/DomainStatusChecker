@@ -82,9 +82,10 @@
                                     <td>
                                         @if (site.Nameservers.Any())
                                         {
-                                            <div class="nameservers">
-                                                @string.Join("<br/>", site.Nameservers)
-                                            </div>
+                                            foreach (var ns in site.Nameservers)
+                                            {
+                                                @ns<br />
+                                            }
                                         }
                                     </td>
                                 </tr>
@@ -137,9 +138,10 @@
                                 <td>
                                     @if (site.Nameservers.Any())
                                     {
-                                        <div class="nameservers">
-                                            @Html.Raw(string.Join("<br/>", site.Nameservers))
-                                        </div>
+                                        foreach (var ns in site.Nameservers)
+                                        {
+                                            @ns<br />
+                                        }
                                     }
                                 </td>
                             </tr>
