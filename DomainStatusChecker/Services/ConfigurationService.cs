@@ -1,7 +1,5 @@
-using System.Text.RegularExpressions;
-using Microsoft.Extensions.Options;
-using System.Net;
 using System.Text.Json;
+using DomainStatusChecker.Models;
 
 namespace DomainStatusChecker.Services;
 
@@ -9,27 +7,26 @@ public interface IConfigurationService
 {
     List<string> GetSubnets();
     void SaveSubnets(List<string> subnets);
-    List<string> GetCdnProviders();
-    void SaveCdnProviders(List<string> providers);
-    bool ValidateCidr(string cidr);
+    List<string> GetCdnOrganizations();
+    void SaveCdnOrganizations(List<string> organizations);
 }
 
 public class ConfigurationService : IConfigurationService
 {
     private readonly IConfiguration _configuration;
-    private readonly string _appSettingsPath;
+    private readonly IWebHostEnvironment _environment;
     private readonly ILogger<ConfigurationService> _logger;
-    private readonly IWebHostEnvironment _env;
-    private static readonly object _lock = new object();
+    private const string SubnetsSection = "AppSettings:Subnets";
+    private const string CdnOrganizationsSection = "AppSettings:CdnOrganizations";
+    private const string ConfigFileName = "appsettings.json";
 
     public ConfigurationService(
-        IConfiguration configuration, 
-        IWebHostEnvironment env,
+        IConfiguration configuration,
+        IWebHostEnvironment environment,
         ILogger<ConfigurationService> logger)
     {
         _configuration = configuration;
-        _env = env;
-        _appSettingsPath = Path.Combine(_env.ContentRootPath, "appsettings.json");
+        _environment = environment;
         _logger = logger;
     }
 
@@ -37,7 +34,7 @@ public class ConfigurationService : IConfigurationService
     {
         try
         {
-            var subnets = _configuration.GetSection("AppSettings:Subnets").Get<List<string>>();
+            var subnets = _configuration.GetSection(SubnetsSection).Get<List<string>>();
             return subnets ?? new List<string>();
         }
         catch (Exception ex)
@@ -47,169 +44,72 @@ public class ConfigurationService : IConfigurationService
         }
     }
 
-    public List<string> GetCdnProviders()
+    public List<string> GetCdnOrganizations()
     {
         try
         {
-            var providers = _configuration.GetSection("AppSettings:CdnOrganizations").Get<List<string>>();
-            return providers ?? new List<string>();
+            var organizations = _configuration.GetSection(CdnOrganizationsSection).Get<List<string>>();
+            return organizations ?? new List<string>();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting CDN providers from configuration");
+            _logger.LogError(ex, "Error getting CDN organizations from configuration");
             return new List<string>();
         }
     }
 
     public void SaveSubnets(List<string> subnets)
     {
-        if (!subnets.Any())
-        {
-            throw new ArgumentException("At least one subnet must be specified.");
-        }
-
-        if (subnets.Any(s => !ValidateCidr(s)))
-        {
-            throw new ArgumentException("One or more subnets are not in valid CIDR format.");
-        }
-
-        SaveConfiguration("Subnets", subnets);
+        SaveConfiguration(SubnetsSection, subnets);
     }
 
-    public void SaveCdnProviders(List<string> providers)
+    public void SaveCdnOrganizations(List<string> organizations)
     {
-        if (!providers.Any())
-        {
-            throw new ArgumentException("At least one CDN provider must be specified.");
-        }
-
-        if (providers.Any(string.IsNullOrWhiteSpace))
-        {
-            throw new ArgumentException("CDN provider names cannot be empty.");
-        }
-
-        SaveConfiguration("CdnOrganizations", providers);
+        SaveConfiguration(CdnOrganizationsSection, organizations);
     }
 
-    private void SaveConfiguration(string key, List<string> values)
+    private void SaveConfiguration<T>(string section, T value)
     {
-        lock (_lock)
+        try
         {
-            try
+            var configPath = Path.Combine(_environment.ContentRootPath, ConfigFileName);
+            var jsonString = File.ReadAllText(configPath);
+            var config = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonString);
+
+            if (config == null)
             {
-                // Read the current JSON file
-                string jsonString;
-                try
-                {
-                    jsonString = File.ReadAllText(_appSettingsPath);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error reading configuration file");
-                    throw new Exception("Could not read configuration file.", ex);
-                }
-
-                // Parse the JSON
-                JsonDocument jsonDoc;
-                try
-                {
-                    jsonDoc = JsonDocument.Parse(jsonString);
-                }
-                catch (JsonException ex)
-                {
-                    _logger.LogError(ex, "Error parsing configuration JSON");
-                    throw new Exception("Invalid JSON in configuration file.", ex);
-                }
-
-                // Create a new configuration object
-                var configObj = new Dictionary<string, object>();
-
-                // Copy all existing properties
-                foreach (var element in jsonDoc.RootElement.EnumerateObject())
-                {
-                    if (element.Name == "AppSettings")
-                    {
-                        var appSettings = new Dictionary<string, object>();
-                        foreach (var setting in element.Value.EnumerateObject())
-                        {
-                            if (setting.Name == key)
-                            {
-                                appSettings[key] = values;
-                            }
-                            else
-                            {
-                                appSettings[setting.Name] = JsonSerializer.Deserialize<object>(setting.Value.GetRawText());
-                            }
-                        }
-                        configObj["AppSettings"] = appSettings;
-                    }
-                    else
-                    {
-                        configObj[element.Name] = JsonSerializer.Deserialize<object>(element.Value.GetRawText());
-                    }
-                }
-
-                // Serialize the updated configuration
-                var options = new JsonSerializerOptions { WriteIndented = true };
-                var updatedJson = JsonSerializer.Serialize(configObj, options);
-
-                try
-                {
-                    // Write to a temporary file first
-                    var tempPath = Path.GetTempFileName();
-                    File.WriteAllText(tempPath, updatedJson);
-
-                    // Replace the original file
-                    File.Copy(tempPath, _appSettingsPath, true);
-                    File.Delete(tempPath);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error writing configuration file");
-                    throw new Exception("Could not write configuration file.", ex);
-                }
-
-                // Reload configuration
-                try
-                {
-                    if (_configuration is IConfigurationRoot configRoot)
-                    {
-                        configRoot.Reload();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error reloading configuration");
-                    throw new Exception("Could not reload configuration.", ex);
-                }
-
-                _logger.LogInformation("Successfully saved {Count} values to configuration key {Key}", values.Count, key);
+                throw new InvalidOperationException("Failed to deserialize configuration file");
             }
-            catch (Exception ex)
+
+            var sectionParts = section.Split(':');
+            var currentSection = config;
+
+            // Navigate through nested sections
+            for (int i = 0; i < sectionParts.Length - 1; i++)
             {
-                _logger.LogError(ex, "Error saving configuration for key {Key}", key);
-                throw new Exception($"Failed to save configuration: {ex.Message}", ex);
+                var part = sectionParts[i];
+                if (!currentSection.ContainsKey(part))
+                {
+                    currentSection[part] = new Dictionary<string, object>();
+                }
+                currentSection = (Dictionary<string, object>)currentSection[part];
             }
+
+            // Update the value
+            var lastPart = sectionParts[^1];
+            currentSection[lastPart] = value;
+
+            // Save back to file
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            var updatedJson = JsonSerializer.Serialize(config, options);
+            File.WriteAllText(configPath, updatedJson);
+
+            _logger.LogInformation("Configuration saved successfully: {Section}", section);
         }
-    }
-
-    public bool ValidateCidr(string cidr)
-    {
-        if (string.IsNullOrWhiteSpace(cidr))
-            return false;
-
-        var parts = cidr.Split('/');
-        if (parts.Length != 2)
-            return false;
-
-        // Validate IP address part
-        if (!IPAddress.TryParse(parts[0], out _))
-            return false;
-
-        // Validate subnet mask part
-        if (!int.TryParse(parts[1], out int maskBits))
-            return false;
-
-        return maskBits >= 0 && maskBits <= 32;
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving configuration: {Section}", section);
+            throw;
+        }
     }
 }
