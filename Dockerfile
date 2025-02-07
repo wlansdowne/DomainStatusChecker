@@ -10,37 +10,46 @@ RUN dotnet restore
 COPY DomainStatusChecker/. ./
 RUN dotnet publish -c Release -o /app
 
-# Runtime stage with NGINX
-FROM nginx:alpine
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:7.0.15
+WORKDIR /app
 
-# Install .NET Runtime
-RUN apk add --no-cache \
-    aspnetcore7-runtime \
-    curl \
-    tzdata
+# Install NGINX
+RUN apt-get update && \
+    apt-get install -y nginx curl tzdata && \
+    rm -rf /var/lib/apt/lists/* && \
+    # Create necessary directories and set permissions
+    mkdir -p /var/log/nginx /var/lib/nginx/tmp /var/run && \
+    chown -R www-data:www-data /var/log/nginx /var/lib/nginx /var/run
 
 # Copy NGINX configuration
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 
-# Copy published app
-WORKDIR /app
+# Copy published app and static files
 COPY --from=build /app ./
-
-# Copy static files to NGINX directory
-COPY DomainStatusChecker/wwwroot /app/wwwroot
+COPY DomainStatusChecker/wwwroot ./wwwroot
 
 # Environment variables
-ENV ASPNETCORE_URLS=http://+:80 \
+ENV ASPNETCORE_URLS=http://+:5000 \
     ASPNETCORE_ENVIRONMENT=Production \
     TZ=America/New_York
 
-# Create non-root user
-RUN adduser -D -H -u 1000 -s /sbin/nologin appuser && \
-    chown -R appuser:appuser /app /var/cache/nginx /var/run/nginx.pid
+# Set up non-root user
+RUN useradd -r -s /bin/false appuser && \
+    # Set permissions for application
+    chown -R appuser:appuser /app && \
+    # Set permissions for NGINX
+    touch /var/run/nginx.pid && \
+    chown -R appuser:www-data /var/run/nginx.pid && \
+    chmod 2755 /var/log/nginx /var/lib/nginx /var/run
 
-# Start both NGINX and the .NET application
+# Copy and set up start script
 COPY start.sh /start.sh
-RUN chmod +x /start.sh
+RUN chmod +x /start.sh && \
+    chown appuser:appuser /start.sh
+
+# Switch to non-root user
+USER appuser
 
 EXPOSE 80
 CMD ["/start.sh"]
