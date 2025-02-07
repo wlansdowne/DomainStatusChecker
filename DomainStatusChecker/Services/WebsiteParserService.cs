@@ -12,8 +12,9 @@ public class WebsiteParserService : IWebsiteParserService
 {
     private readonly ILogger<WebsiteParserService> _logger;
     private readonly IDomainStatusService _domainStatusService;
-    private static readonly SemaphoreSlim _processingLimiter = new SemaphoreSlim(20); // Increased to 20 concurrent
-    private const int BatchSize = 50; // Process in batches of 50
+    private static readonly SemaphoreSlim _processingLimiter = new SemaphoreSlim(20);
+    private const int BatchSize = 25; // Reduced batch size
+    private const int ChunkSize = 100; // Number of lines to read at once
 
     public WebsiteParserService(
         ILogger<WebsiteParserService> logger,
@@ -32,43 +33,55 @@ public class WebsiteParserService : IWebsiteParserService
         try
         {
             using var reader = new StreamReader(csvStream);
-            var lines = new List<string>();
-
-            // First pass: count lines and filter out headers/empty lines
+            var currentChunk = new List<string>(ChunkSize);
             string? line;
-            while ((line = await reader.ReadLineAsync()) != null)
-            {
-                if (!string.IsNullOrWhiteSpace(line) && 
-                    !line.StartsWith("Site Name", StringComparison.OrdinalIgnoreCase) &&
-                    !line.StartsWith("="))
-                {
-                    lines.Add(line);
-                    totalLines++;
-                }
-            }
 
-            // Process websites in batches
-            for (int i = 0; i < lines.Count; i += BatchSize)
+            while (!reader.EndOfStream)
             {
-                var batch = lines.Skip(i).Take(BatchSize);
-                var batchTasks = batch.Select(websiteLine =>
-                    ProcessWebsiteLineAsync(websiteLine, websites, () =>
+                // Process CSV in chunks to avoid memory issues
+                currentChunk.Clear();
+                var chunkCount = 0;
+
+                // Read a chunk of lines
+                while (chunkCount < ChunkSize && (line = await reader.ReadLineAsync()) != null)
+                {
+                    if (!string.IsNullOrWhiteSpace(line) && 
+                        !line.StartsWith("Site Name", StringComparison.OrdinalIgnoreCase) &&
+                        !line.StartsWith("="))
                     {
-                        processedCount++;
-                        var progress = (double)processedCount / totalLines * 100;
-                        _logger.LogInformation("Processing progress: {Progress:F1}% ({Current}/{Total})",
-                            progress, processedCount, totalLines);
-                    }));
-
-                // Process each batch with a timeout
-                try
-                {
-                    await Task.WhenAll(batchTasks).WaitAsync(TimeSpan.FromMinutes(5));
+                        currentChunk.Add(line);
+                        totalLines++;
+                    }
+                    chunkCount++;
                 }
-                catch (TimeoutException)
+
+                // Process the current chunk in batches
+                for (int i = 0; i < currentChunk.Count; i += BatchSize)
                 {
-                    _logger.LogWarning("Batch processing timeout. Moving to next batch.");
-                    continue;
+                    var batch = currentChunk.Skip(i).Take(BatchSize);
+                    var batchTasks = batch.Select(websiteLine =>
+                        ProcessWebsiteLineAsync(websiteLine, websites, () =>
+                        {
+                            processedCount++;
+                            var progress = (double)processedCount / totalLines * 100;
+                            _logger.LogInformation("Processing progress: {Progress:F1}% ({Current}/{Total})",
+                                progress, processedCount, totalLines);
+                        }));
+
+                    try
+                    {
+                        // Process batch with timeout
+                        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+                        await Task.WhenAll(batchTasks).WaitAsync(cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _logger.LogWarning("Batch processing timeout. Moving to next batch.");
+                        continue;
+                    }
+
+                    // Add small delay between batches to prevent overwhelming
+                    await Task.Delay(100);
                 }
             }
         }
@@ -104,14 +117,13 @@ public class WebsiteParserService : IWebsiteParserService
                 {
                     _logger.LogInformation("Checking domain status for: {Domain}", website.Host);
                     
-                    // Add timeout for individual domain check
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                     try
                     {
                         website.DomainStatus = await _domainStatusService.CheckDomainStatusAsync(website.Host)
                             .WaitAsync(TimeSpan.FromSeconds(30), cts.Token);
                     }
-                    catch (TimeoutException)
+                    catch (OperationCanceledException)
                     {
                         website.DomainStatus = "Timeout";
                         _logger.LogWarning("Domain check timeout for: {Domain}", website.Host);
@@ -155,7 +167,6 @@ public class WebsiteParserService : IWebsiteParserService
             var currentPart = 0;
             var nameParts = new List<string>();
 
-            // Parse name until we hit a status
             while (currentPart < parts.Length &&
                    !parts[currentPart].Equals("STARTED", StringComparison.OrdinalIgnoreCase) &&
                    !parts[currentPart].Equals("STOPPED", StringComparison.OrdinalIgnoreCase))
@@ -172,7 +183,6 @@ public class WebsiteParserService : IWebsiteParserService
             website.Name = string.Join(" ", nameParts).Trim();
             website.Status = parts[currentPart++];
 
-            // Parse remaining fields
             if (currentPart < parts.Length)
             {
                 website.IP = parts[currentPart++];
