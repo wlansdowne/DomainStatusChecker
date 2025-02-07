@@ -18,9 +18,13 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y nginx curl tzdata && \
     rm -rf /var/lib/apt/lists/* && \
-    # Create necessary directories and set permissions
-    mkdir -p /var/log/nginx /var/lib/nginx/tmp /var/run && \
-    chown -R www-data:www-data /var/log/nginx /var/lib/nginx /var/run
+    # Create necessary directories with proper permissions
+    mkdir -p /var/log/nginx /var/lib/nginx/body /var/lib/nginx/fastcgi /var/lib/nginx/proxy /var/lib/nginx/scgi /var/lib/nginx/uwsgi /run/nginx && \
+    # Create directory for ASP.NET Core data protection keys
+    mkdir -p /app/.aspnet/DataProtection-Keys && \
+    # Set permissions
+    chown -R www-data:www-data /var/log/nginx /var/lib/nginx /run/nginx /app/.aspnet && \
+    chmod 755 /var/log/nginx /var/lib/nginx /run/nginx /app/.aspnet
 
 # Copy NGINX configuration
 COPY docker/nginx.conf /etc/nginx/nginx.conf
@@ -38,10 +42,8 @@ ENV ASPNETCORE_URLS=http://+:5000 \
 RUN useradd -r -s /bin/false appuser && \
     # Set permissions for application
     chown -R appuser:appuser /app && \
-    # Set permissions for NGINX
-    touch /var/run/nginx.pid && \
-    chown -R appuser:www-data /var/run/nginx.pid && \
-    chmod 2755 /var/log/nginx /var/lib/nginx /var/run
+    # Ensure NGINX can still access static files
+    chmod -R 755 /app/wwwroot
 
 # Copy and set up start script
 COPY start.sh /start.sh
