@@ -1,47 +1,19 @@
-using DomainStatusChecker.Models;
 using DomainStatusChecker.Services;
-using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
-
-// Configure Kestrel
-builder.WebHost.ConfigureKestrel(options =>
-{
-    options.Limits.MaxRequestBodySize = 52428800; // 50MB
-    options.Limits.MaxRequestHeadersTotalSize = 1048576; // 1MB
-    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(1);
-});
-
-// Configure services
-builder.Services.Configure<KestrelServerOptions>(options =>
-{
-    options.Limits.MaxRequestBodySize = 52428800; // 50MB
-    options.Limits.MaxRequestHeadersTotalSize = 1048576; // 1MB
-});
-
-builder.Services.Configure<IISServerOptions>(options =>
-{
-    options.MaxRequestBodySize = 52428800; // 50MB
-});
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 builder.Services.AddHttpClient();
-
-// Register services
 builder.Services.AddScoped<IDomainStatusService, DomainStatusService>();
 builder.Services.AddScoped<IWebsiteParserService, WebsiteParserService>();
-builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
+builder.Services.AddScoped<IConfigurationService, ConfigurationService>();
 
-// Configure CORS
-builder.Services.AddCors(options =>
+// Configure Kestrel to listen on port 5000
+builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    options.AddDefaultPolicy(policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-    });
+    serverOptions.ListenAnyIP(5000);
 });
 
 var app = builder.Build();
@@ -50,21 +22,26 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
 }
-else
+
+// Configure static files with explicit paths
+app.UseStaticFiles(new StaticFileOptions
 {
-    app.UseDeveloperExceptionPage();
-}
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(app.Environment.ContentRootPath, "wwwroot")),
+    RequestPath = ""
+});
 
-// Use CORS
-app.UseCors();
-
-app.UseStaticFiles();
 app.UseRouting();
+
 app.UseAuthorization();
 
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
+
+// Add health check endpoint
+app.MapGet("/health", () => "Healthy");
 
 app.Run();

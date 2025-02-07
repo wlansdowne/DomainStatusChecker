@@ -14,8 +14,7 @@ A .NET Core application for monitoring website domains, checking their DNS resol
 ## Technology Stack
 
 - ASP.NET Core 7.0
-- Docker & Docker Compose
-- NGINX
+- NGINX (as reverse proxy)
 - Bootstrap for UI
 
 ## Deployment with EasyPanel
@@ -23,84 +22,68 @@ A .NET Core application for monitoring website domains, checking their DNS resol
 ### Prerequisites
 
 1. A server with EasyPanel installed
-2. A GitHub account
+2. A GitHub repository containing this code
 3. Domain name (optional, but recommended)
 
 ### Deployment Steps
 
-1. **Fork/Push to GitHub:**
-   - Create a new GitHub repository
-   - Push the code to your repository:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/domain-status-checker.git
-   git push -u origin main
-   ```
+1. In EasyPanel:
+   - Click "Create App"
+   - Select your GitHub repository
+   - Build Configuration:
+     * Dockerfile name: `Dockerfile` (in root directory)
+     * Port: 80
+   - Environment Variables (optional):
+     * TZ: Your timezone (e.g., America/New_York)
 
-2. **EasyPanel Setup:**
-   - Log into your EasyPanel dashboard
-   - Click "New Service"
-   - Select "Docker Compose"
-   - Connect your GitHub repository
-   - Configure the following:
-     * Service Name: domain-status-checker
-     * Branch: main
-     * Port: 80 (or your preferred port)
-     * Environment Variables (optional):
-       - TZ=Your_Timezone
+2. After Deployment:
+   - Access your application at the provided domain/IP
+   - Go to the Settings page (/Home/Settings)
+   - Configure your subnets and CDN organizations
+   - Upload your websites.csv file
 
-3. **Configuration:**
-   - After deployment, update the subnets and CDN organizations in Settings page
-   - Upload your websites.csv file through the web interface
+## Container Architecture
 
-### Environment Variables
+The application runs in a single container that includes:
+- NGINX as reverse proxy (port 80)
+- .NET Core application (internal port 5000)
+- Shared volume for static files
+- Health check endpoints
 
-- `PORT`: The port to expose (default: 80)
-- `TZ`: Timezone (default: America/New_York)
-- `ASPNETCORE_ENVIRONMENT`: Set to Production by default
+### Security Features
+
+- Non-root user for both NGINX and .NET
+- Security headers configured
+- Request size limits
+- Static file caching
+- GZIP compression
 
 ## Development
 
 ### Local Development Setup
 
 1. Clone the repository
-2. Install Docker and Docker Compose
-3. Run:
+2. Build the Docker image:
    ```bash
-   docker compose build
-   docker compose up
+   docker build -t domain-status-checker .
    ```
-4. Access the application at http://localhost:80
-
-### Project Structure
-
-- `/DomainStatusChecker`: Main application code
-- `/docker`: Docker-related configurations
-  - `nginx.conf`: NGINX reverse proxy configuration
-- `docker-compose.yml`: Service orchestration
-- `Dockerfile`: .NET application container definition
+3. Run the container:
+   ```bash
+   docker run -p 80:80 domain-status-checker
+   ```
+4. Access the application at http://localhost
 
 ## Monitoring
 
 The application includes health check endpoints:
-- `/health`: Basic health check
-- Both the app and NGINX containers have built-in health checks
+- `/health`: Basic health check for both NGINX and .NET application
 
 ## Data Persistence
 
-The application uses Docker volumes for data persistence:
-- `app_data`: Application data
-- `app_logs`: Application logs
-
-## Security Notes
-
-- The application runs with a non-root user in the container
-- NGINX is configured with security headers
-- Static file caching is enabled
-- Request size limits are configured (50MB max)
+The application uses Docker volumes for:
+- Application logs
+- Uploaded CSV files
+- Configuration data
 
 ## Support
 
