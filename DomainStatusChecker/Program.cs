@@ -1,5 +1,6 @@
 using DomainStatusChecker.Services;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,7 +11,7 @@ builder.Services.AddScoped<IDomainStatusService, DomainStatusService>();
 builder.Services.AddScoped<IWebsiteParserService, WebsiteParserService>();
 builder.Services.AddScoped<IConfigurationService, ConfigurationService>();
 
-// Configure Kestrel with timeouts
+// Configure Kestrel with timeouts and limits
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     // Set the maximum request body size to 50MB
@@ -20,12 +21,22 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(5);
     serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(1);
 
+    // Increase header size limits
+    serverOptions.Limits.MaxRequestHeadersTotalSize = 64 * 1024; // 64KB
+    serverOptions.Limits.MaxRequestLineSize = 32 * 1024; // 32KB
+
     // Configure endpoints
     serverOptions.ListenAnyIP(5000, options =>
     {
-        options.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1AndHttp2;
+        options.Protocols = HttpProtocols.Http1AndHttp2;
         options.UseConnectionLogging();
     });
+});
+
+// Configure general HTTP limits
+builder.Services.Configure<KestrelServerOptions>(options =>
+{
+    options.AllowSynchronousIO = true; // Enable if needed for large file uploads
 });
 
 var app = builder.Build();
