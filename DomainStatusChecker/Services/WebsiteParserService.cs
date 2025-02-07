@@ -12,7 +12,8 @@ public class WebsiteParserService : IWebsiteParserService
 {
     private readonly ILogger<WebsiteParserService> _logger;
     private readonly IDomainStatusService _domainStatusService;
-    private static readonly SemaphoreSlim _processingLimiter = new SemaphoreSlim(10); // Max 10 concurrent domain checks
+    private static readonly SemaphoreSlim _processingLimiter = new SemaphoreSlim(20); // Increased to 20 concurrent
+    private const int BatchSize = 50; // Process in batches of 50
 
     public WebsiteParserService(
         ILogger<WebsiteParserService> logger,
@@ -46,20 +47,30 @@ public class WebsiteParserService : IWebsiteParserService
                 }
             }
 
-            // Process websites with concurrent limiting
-            var tasks = new List<Task>();
-            foreach (var websiteLine in lines)
+            // Process websites in batches
+            for (int i = 0; i < lines.Count; i += BatchSize)
             {
-                tasks.Add(ProcessWebsiteLineAsync(websiteLine, websites, () =>
-                {
-                    processedCount++;
-                    var progress = (double)processedCount / totalLines * 100;
-                    _logger.LogInformation("Processing progress: {Progress:F1}% ({Current}/{Total})",
-                        progress, processedCount, totalLines);
-                }));
-            }
+                var batch = lines.Skip(i).Take(BatchSize);
+                var batchTasks = batch.Select(websiteLine =>
+                    ProcessWebsiteLineAsync(websiteLine, websites, () =>
+                    {
+                        processedCount++;
+                        var progress = (double)processedCount / totalLines * 100;
+                        _logger.LogInformation("Processing progress: {Progress:F1}% ({Current}/{Total})",
+                            progress, processedCount, totalLines);
+                    }));
 
-            await Task.WhenAll(tasks);
+                // Process each batch with a timeout
+                try
+                {
+                    await Task.WhenAll(batchTasks).WaitAsync(TimeSpan.FromMinutes(5));
+                }
+                catch (TimeoutException)
+                {
+                    _logger.LogWarning("Batch processing timeout. Moving to next batch.");
+                    continue;
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -92,7 +103,19 @@ public class WebsiteParserService : IWebsiteParserService
                     !website.Host.Equals("N/A", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogInformation("Checking domain status for: {Domain}", website.Host);
-                    website.DomainStatus = await _domainStatusService.CheckDomainStatusAsync(website.Host);
+                    
+                    // Add timeout for individual domain check
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    try
+                    {
+                        website.DomainStatus = await _domainStatusService.CheckDomainStatusAsync(website.Host)
+                            .WaitAsync(TimeSpan.FromSeconds(30), cts.Token);
+                    }
+                    catch (TimeoutException)
+                    {
+                        website.DomainStatus = "Timeout";
+                        _logger.LogWarning("Domain check timeout for: {Domain}", website.Host);
+                    }
                 }
                 else
                 {
