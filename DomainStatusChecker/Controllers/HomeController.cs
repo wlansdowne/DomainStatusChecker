@@ -37,7 +37,10 @@ public class HomeController : Controller
         var model = new SettingsViewModel
         {
             Subnets = _configService.GetSubnets(),
-            CdnOrganizations = _configService.GetCdnOrganizations()
+            CdnOrganizations = _configService.GetCdnOrganizations(),
+            CdnProviders = _configService.GetCdnOrganizations(), // Alias for UI
+            SuccessMessage = TempData["Message"]?.ToString(),
+            ErrorMessage = TempData["Error"]?.ToString()
         };
         return View(model);
     }
@@ -99,6 +102,20 @@ public class HomeController : Controller
     {
         try
         {
+            if (!string.IsNullOrWhiteSpace(model.NewSubnet))
+            {
+                var subnets = model.Subnets ?? new List<string>();
+                subnets.Add(model.NewSubnet);
+                model.Subnets = subnets;
+            }
+
+            if (!string.IsNullOrWhiteSpace(model.NewCdnProvider))
+            {
+                var cdnProviders = model.CdnOrganizations ?? new List<string>();
+                cdnProviders.Add(model.NewCdnProvider);
+                model.CdnOrganizations = cdnProviders;
+            }
+
             _configService.SaveSubnets(model.Subnets ?? new List<string>());
             _configService.SaveCdnOrganizations(model.CdnOrganizations ?? new List<string>());
             TempData["Message"] = "Settings saved successfully";
